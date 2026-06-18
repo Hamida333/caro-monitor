@@ -1,0 +1,802 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Monitoring Carotidien Piézoélectrique — 12 min</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+:root {
+  --bg: #0f1117;
+  --bg2: #181c27;
+  --bg3: #1e2335;
+  --border: #2a3050;
+  --text: #e2e8f0;
+  --text2: #8892b0;
+  --blue: #4da6ff;
+  --orange: #ff7043;
+  --green: #66bb6a;
+  --purple: #ab47bc;
+  --teal: #26c6da;
+  --red: #ef5350;
+  --yellow: #ffd54f;
+  --rest-bg: rgba(77,166,255,0.06);
+  --effort-bg: rgba(255,112,67,0.06);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; min-height: 100vh; }
+
+header {
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  padding: 12px 24px;
+  display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: 10px;
+}
+header h1 { font-size: 15px; font-weight: 600; color: var(--text); }
+header .subtitle { font-size: 11px; color: var(--text2); margin-top: 2px; }
+.status-bar {
+  display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+}
+.phase-badge {
+  padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600;
+  background: rgba(77,166,255,0.15); color: var(--blue); border: 1px solid rgba(77,166,255,0.3);
+  transition: all .4s;
+}
+.phase-badge.effort {
+  background: rgba(255,112,67,0.15); color: var(--orange); border-color: rgba(255,112,67,0.3);
+}
+.elapsed { font-size: 13px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+.progress-wrap { flex: 1; min-width: 180px; }
+.progress-track { height: 6px; background: var(--bg3); border-radius: 3px; position: relative; overflow: hidden; }
+.progress-fill { height: 100%; border-radius: 3px; transition: width .5s linear; background: linear-gradient(90deg, var(--blue) 25%, var(--orange)); }
+.progress-marker { position: absolute; left: 25%; top: -1px; height: 8px; width: 2px; background: var(--text2); }
+
+main { padding: 16px 20px; }
+.tabs { display: flex; gap: 6px; margin-bottom: 14px; }
+.tab { padding: 5px 16px; border-radius: 6px; font-size: 12px; font-weight: 500;
+  background: var(--bg2); border: 1px solid var(--border); color: var(--text2); cursor: pointer; transition: all .15s; }
+.tab.active { background: rgba(77,166,255,0.15); color: var(--blue); border-color: rgba(77,166,255,0.4); }
+
+.panel { display: none; }
+.panel.active { display: block; }
+
+/* Calibration */
+.calib-box {
+  background: var(--bg2); border: 1px solid var(--border); border-radius: 10px;
+  padding: 12px 16px; margin-bottom: 14px;
+}
+.calib-box h3 { font-size: 11px; font-weight: 500; color: var(--text2); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 10px; }
+.calib-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
+.cf { display: flex; flex-direction: column; gap: 4px; }
+.cf label { font-size: 11px; color: var(--text2); }
+.cf input[type=number] {
+  width: 78px; background: var(--bg3); border: 1px solid var(--border);
+  color: var(--text); padding: 5px 8px; border-radius: 6px; font-size: 13px; font-weight: 500;
+}
+.cf input[type=text] {
+  width: 108px; background: var(--bg3); border: 1px solid var(--border);
+  color: var(--text); padding: 5px 8px; border-radius: 6px; font-size: 12px;
+}
+.btn-apply {
+  padding: 6px 14px; background: rgba(77,166,255,0.15); color: var(--blue);
+  border: 1px solid rgba(77,166,255,0.35); border-radius: 6px; font-size: 12px;
+  font-weight: 500; cursor: pointer; transition: all .15s;
+}
+.btn-apply:hover { background: rgba(77,166,255,0.25); }
+
+/* Metrics */
+.metrics-grid { display: grid; gap: 8px; margin-bottom: 12px; }
+.m4 { grid-template-columns: repeat(4,1fr); }
+.m3 { grid-template-columns: repeat(3,1fr); }
+.m6 { grid-template-columns: repeat(3,1fr); }
+@media(max-width:640px){.m4{grid-template-columns:repeat(2,1fr);}.m3{grid-template-columns:repeat(2,1fr);}}
+.mc {
+  background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px;
+  transition: border-color .3s;
+}
+.mc.alert { border-color: var(--red); }
+.mc.warn { border-color: var(--yellow); }
+.mc .ml { font-size: 10px; color: var(--text2); margin-bottom: 3px; }
+.mc .mv { font-size: 22px; font-weight: 600; color: var(--text); line-height: 1; transition: color .3s; }
+.mc.alert .mv { color: var(--red); }
+.mc.warn .mv { color: var(--yellow); }
+.mc .mu { font-size: 10px; color: var(--text2); margin-top: 1px; }
+.mc .trend { font-size: 10px; margin-top: 3px; }
+
+/* Phase bar */
+.phase-bar { display: flex; height: 5px; border-radius: 3px; overflow: hidden; margin-bottom: 4px; }
+.ph-r { background: var(--blue); flex: 3; }
+.ph-e { background: var(--orange); flex: 9; }
+.phase-lbl { display: flex; font-size: 10px; color: var(--text2); margin-bottom: 10px; }
+.phase-lbl span:first-child { flex: 3; }
+.phase-lbl span:last-child { flex: 9; }
+
+/* Cursor time indicator */
+.chart-phase-cursor { position: absolute; top: 0; left: 25%; width: 1px; height: 100%; background: rgba(255,255,255,0.15); pointer-events: none; }
+.chart-cursor { position: absolute; top: 0; width: 2px; height: 100%; background: rgba(255,255,255,0.5); pointer-events: none; transition: left .5s linear; }
+
+/* Charts */
+.charts-col { display: flex; flex-direction: column; gap: 10px; }
+.chart-card {
+  background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px 8px;
+  position: relative;
+}
+.chart-card .ct { font-size: 11px; color: var(--text2); margin-bottom: 6px; }
+.chart-card canvas { display: block; }
+
+/* Legend */
+.leg { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+.li { display: flex; align-items: center; gap: 4px; font-size: 10px; color: var(--text2); }
+.ld { width: 10px; height: 3px; border-radius: 2px; }
+
+/* Steno panel */
+.steno-panel {
+  background: var(--bg2); border: 1px solid var(--border); border-radius: 10px;
+  padding: 12px 16px; margin-bottom: 12px;
+}
+.steno-panel h3 { font-size: 11px; font-weight: 500; color: var(--text2); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 8px; }
+.formula { font-size: 11px; color: var(--text2); background: var(--bg3); border-left: 2px solid var(--border); padding: 5px 10px; border-radius: 0 4px 4px 0; margin-bottom: 10px; }
+.formula span { color: var(--text); font-weight: 500; }
+.sgrid { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; }
+@media(max-width:640px){.sgrid{grid-template-columns:repeat(2,1fr);}}
+.sc { background: var(--bg3); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; }
+.sc .sl { font-size: 10px; color: var(--text2); margin-bottom: 2px; }
+.sc .sv { font-size: 15px; font-weight: 600; color: var(--text); }
+.badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+.b-ok { background: rgba(102,187,106,.15); color: #66bb6a; border: 1px solid rgba(102,187,106,.3); }
+.b-lim { background: rgba(255,213,79,.15); color: #ffd54f; border: 1px solid rgba(255,213,79,.3); }
+.b-alert { background: rgba(239,83,80,.15); color: #ef5350; border: 1px solid rgba(239,83,80,.3); }
+.seuils { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.stag { font-size: 10px; padding: 2px 7px; border-radius: 4px; border: 1px solid var(--border); color: var(--text2); background: var(--bg3); }
+
+/* Alpha sliders */
+.alpha-box { background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; padding: 12px 16px; margin-bottom: 12px; }
+.alpha-box h3 { font-size: 11px; font-weight: 500; color: var(--text2); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 8px; }
+.arow { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+.arow label { font-size: 11px; color: var(--text2); width: 70px; }
+.arow input[type=range] { flex: 1; accent-color: var(--blue); }
+.aval { font-size: 13px; font-weight: 600; color: var(--text); width: 36px; text-align: right; }
+.formula-live { font-size: 12px; color: var(--blue); margin-top: 4px; }
+
+/* Controls */
+.ctrl-bar {
+  display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+  background: var(--bg2); border: 1px solid var(--border); border-radius: 10px;
+  padding: 10px 16px; margin-bottom: 14px;
+}
+.btn-ctrl {
+  padding: 6px 16px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer;
+  border: 1px solid; transition: all .15s;
+}
+.btn-start { background: rgba(102,187,106,.15); color: var(--green); border-color: rgba(102,187,106,.4); }
+.btn-start:hover { background: rgba(102,187,106,.25); }
+.btn-pause { background: rgba(255,213,79,.15); color: var(--yellow); border-color: rgba(255,213,79,.4); }
+.btn-reset { background: rgba(239,83,80,.1); color: var(--red); border-color: rgba(239,83,80,.3); }
+.speed-label { font-size: 11px; color: var(--text2); }
+.speed-sel { background: var(--bg3); border: 1px solid var(--border); color: var(--text); padding: 4px 8px; border-radius: 6px; font-size: 12px; }
+
+.notes { font-size: 11px; color: var(--text2); border-left: 2px solid var(--border); padding-left: 10px; margin-top: 10px; line-height: 1.7; }
+
+.rec-dot {
+  width: 8px; height: 8px; border-radius: 50%; background: var(--red);
+  animation: blink 1s infinite;
+}
+@keyframes blink { 0%,100%{opacity:1;} 50%{opacity:0.2;} }
+.rec-hidden { visibility: hidden; }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>🫀 Monitoring Carotidien Piézoélectrique — Capteurs AlN/Kapton</h1>
+    <div class="subtitle">F · 40 ans · sans ATCD · Carotide primitive gauche · Protocole 12 min (repos 3' + montée 4 étages 9')</div>
+  </div>
+  <div class="status-bar">
+    <div class="rec-dot rec-hidden" id="rec-dot"></div>
+    <div class="phase-badge" id="phase-badge">⏸ En attente</div>
+    <div class="elapsed" id="elapsed">0:00 / 12:00</div>
+    <div class="progress-wrap">
+      <div class="progress-track">
+        <div class="progress-fill" id="progress-fill" style="width:0%"></div>
+        <div class="progress-marker" title="Fin repos / Début effort"></div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main>
+  <!-- Controls -->
+  <div class="ctrl-bar">
+    <button class="btn-ctrl btn-start" id="btn-play" onclick="togglePlay()">▶ Démarrer</button>
+    <button class="btn-ctrl btn-reset" onclick="resetSim()">↺ Réinitialiser</button>
+    <span class="speed-label">Vitesse :</span>
+    <select class="speed-sel" id="speed-sel" onchange="setSpeed(this.value)">
+      <option value="1">×1 (12 min réel)</option>
+      <option value="6">×6 (2 min)</option>
+      <option value="12" selected>×12 (1 min)</option>
+      <option value="30">×30 (24 s)</option>
+      <option value="60">×60 (12 s)</option>
+    </select>
+    <span style="font-size:11px;color:var(--text2);margin-left:auto;">Calibration → onglet · D = 50 mm fixe</span>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" onclick="sw('m1')">Modèle 1 — 1 capteur</button>
+    <button class="tab" onclick="sw('m2')">Modèle 2 — 2 capteurs + IP composite</button>
+  </div>
+
+  <!-- ===== MODELE 1 ===== -->
+  <div class="panel active" id="panel-m1">
+
+    <div class="calib-box">
+      <h3>Calibration initiale au repos — tous les 15 jours</h3>
+      <div class="calib-row">
+        <div class="cf"><label>PAS (mmHg)</label><input type="number" id="s1" value="118" min="80" max="200"></div>
+        <div class="cf"><label>PAD (mmHg)</label><input type="number" id="d1" value="72" min="40" max="130"></div>
+        <div class="cf"><label>FC (bpm)</label><input type="number" id="h1" value="64" min="40" max="120"></div>
+        <div class="cf"><label>Taille (cm)</label><input type="number" id="ht1" value="165" min="140" max="200"></div>
+        <div class="cf"><label>Date</label><input type="text" id="cd1" value="10/06/2025"></div>
+        <div style="align-self:flex-end;"><button class="btn-apply" onclick="applyCalib()">Appliquer ↗</button></div>
+      </div>
+    </div>
+
+    <div class="metrics-grid m4" id="mr1">
+      <div class="mc" id="mc1s"><div class="ml">PAS</div><div class="mv" id="v1s">—</div><div class="mu">mmHg</div><div class="trend" id="tr1s"></div></div>
+      <div class="mc" id="mc1d"><div class="ml">PAD</div><div class="mv" id="v1d">—</div><div class="mu">mmHg</div></div>
+      <div class="mc"><div class="ml">PAM</div><div class="mv" id="v1m">—</div><div class="mu">mmHg</div></div>
+      <div class="mc" id="mc1h"><div class="ml">FC</div><div class="mv" id="v1h">—</div><div class="mu">bpm</div></div>
+    </div>
+    <div class="metrics-grid m3">
+      <div class="mc"><div class="ml">Stiffness Index</div><div class="mv" id="v1si">—</div><div class="mu">m/s</div></div>
+      <div class="mc"><div class="ml">Reflection Index</div><div class="mv" id="v1ri">—</div><div class="mu">%</div></div>
+      <div class="mc"><div class="ml">Pression pulsée</div><div class="mv" id="v1pp">—</div><div class="mu">mmHg</div></div>
+    </div>
+
+    <div class="phase-bar"><div class="ph-r"></div><div class="ph-e"></div></div>
+    <div class="phase-lbl"><span>Repos (0–3 min)</span><span>Montée 4 étages (3–12 min)</span></div>
+
+    <div class="leg">
+      <div class="li"><div class="ld" style="background:var(--blue)"></div>Signal piézo (µV)</div>
+      <div class="li"><div class="ld" style="background:var(--orange)"></div>Onde de pouls</div>
+      <div class="li"><div class="ld" style="background:#66bb6a"></div>PAS</div>
+      <div class="li"><div class="ld" style="background:#4da6ff"></div>PAD</div>
+      <div class="li"><div class="ld" style="background:var(--purple)"></div>FC</div>
+      <div class="li"><div class="ld" style="background:#ff8a65"></div>Stiffness Index</div>
+    </div>
+
+    <div class="charts-col">
+      <div class="chart-card">
+        <div class="ct">Signal piézoélectrique carotidien (µV)</div>
+        <div style="position:relative;">
+          <canvas id="c1p" height="90" role="img" aria-label="Signal piézo carotidien temps réel"></canvas>
+          <div class="chart-phase-cursor"></div>
+          <div class="chart-cursor" id="cur1p"></div>
+        </div>
+      </div>
+      <div class="chart-card">
+        <div class="ct">Onde de pouls carotidienne — calibrée (mmHg)</div>
+        <div style="position:relative;">
+          <canvas id="c1b" height="90" role="img" aria-label="Onde de pouls temps réel"></canvas>
+          <div class="chart-phase-cursor"></div>
+          <div class="chart-cursor" id="cur1b"></div>
+        </div>
+      </div>
+      <div class="chart-card">
+        <div class="ct">Tension artérielle continue — PAS / PAD (mmHg)</div>
+        <div style="position:relative;">
+          <canvas id="c1ta" height="90" role="img" aria-label="PAS et PAD temps réel"></canvas>
+          <div class="chart-phase-cursor"></div>
+          <div class="chart-cursor" id="cur1ta"></div>
+        </div>
+      </div>
+      <div class="chart-card">
+        <div class="ct">Fréquence cardiaque (bpm)</div>
+        <div style="position:relative;">
+          <canvas id="c1hr" height="75" role="img" aria-label="FC temps réel"></canvas>
+          <div class="chart-phase-cursor"></div>
+          <div class="chart-cursor" id="cur1hr"></div>
+        </div>
+      </div>
+      <div class="chart-card">
+        <div class="ct">Stiffness Index (m/s) — rigidité pariétale</div>
+        <div style="position:relative;">
+          <canvas id="c1si" height="75" role="img" aria-label="Stiffness index temps réel"></canvas>
+          <div class="chart-phase-cursor"></div>
+          <div class="chart-cursor" id="cur1si"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="notes">
+      Capteur AlN/Kapton · Carotide primitive gauche · 1 capteur unique.<br>
+      SI = taille(m) / ΔT(s) entre pic systolique et crochet dicrote · RI = (A_diastolique / A_systolique) × 100.<br>
+      PAM = PAD + (PAS−PAD)/3 · Calibration AAMI tous les 15 j (MAE &lt; 5 mmHg, STD &lt; 8 mmHg).
+    </div>
+  </div>
+
+  <!-- ===== MODELE 2 ===== -->
+  <div class="panel" id="panel-m2">
+
+    <div class="calib-box">
+      <h3>Calibration initiale — 2 capteurs · D fixe = 50 mm · tous les 15 jours</h3>
+      <div class="calib-row">
+        <div class="cf"><label>PAS (mmHg)</label><input type="number" id="s2" value="118" min="80" max="200"></div>
+        <div class="cf"><label>PAD (mmHg)</label><input type="number" id="d2" value="72" min="40" max="130"></div>
+        <div class="cf"><label>FC (bpm)</label><input type="number" id="h2" value="64" min="40" max="120"></div>
+        <div class="cf"><label>Diam. artère (mm)</label><input type="number" id="diam" value="7.5" min="3" max="15" step="0.1"></div>
+        <div class="cf"><label>Date</label><input type="text" id="cd2" value="10/06/2025"></div>
+        <div style="align-self:flex-end;"><button class="btn-apply" onclick="applyCalib2()">Appliquer ↗</button></div>
+      </div>
+    </div>
+
+    <div class="alpha-box">
+      <h3>Pondérations IP composite — libres (α + β = 1, à optimiser sur données Doppler)</h3>
+      <div class="formula">
+        IP = α · (A₂/A₁) + β · (S₂/S₁) &nbsp;|&nbsp; A = amplitude systolique &nbsp;|&nbsp; S = surface sous courbe (intégrale systolique)<br>
+        <span id="formula-live">IP = 0.50 · RA + 0.50 · RS</span>
+      </div>
+      <div class="arow">
+        <label>α (amplitude)</label>
+        <input type="range" id="sl-alpha" min="0" max="100" value="50" oninput="updateAlpha(this.value)">
+        <span class="aval" id="lbl-a">0.50</span>
+      </div>
+      <div class="arow">
+        <label>β (surface)</label>
+        <input type="range" min="0" max="100" value="50" disabled style="flex:1;opacity:.35;accent-color:var(--purple);">
+        <span class="aval" id="lbl-b">0.50</span>
+      </div>
+    </div>
+
+    <div class="metrics-grid m4">
+      <div class="mc" id="mc2s"><div class="ml">PAS</div><div class="mv" id="v2s">—</div><div class="mu">mmHg</div></div>
+      <div class="mc" id="mc2d"><div class="ml">PAD</div><div class="mv" id="v2d">—</div><div class="mu">mmHg</div></div>
+      <div class="mc" id="mc2h"><div class="ml">FC</div><div class="mv" id="v2h">—</div><div class="mu">bpm</div></div>
+      <div class="mc"><div class="ml">PAM</div><div class="mv" id="v2m">—</div><div class="mu">mmHg</div></div>
+    </div>
+    <div class="metrics-grid m3">
+      <div class="mc"><div class="ml">PTT (D=50mm)</div><div class="mv" id="v2ptt">—</div><div class="mu">ms</div></div>
+      <div class="mc"><div class="ml">VOP locale</div><div class="mv" id="v2vop">—</div><div class="mu">m/s</div></div>
+      <div class="mc" id="mc2vs"><div class="ml">Vsys pic</div><div class="mv" id="v2vs">—</div><div class="mu">m/s</div></div>
+    </div>
+
+    <div class="steno-panel">
+      <h3>Index de perméabilité composite — dépistage sténose carotidienne</h3>
+      <div class="sgrid">
+        <div class="sc"><div class="sl">IP composite (u.a.)</div><div class="sv" id="v2ip">—</div></div>
+        <div class="sc"><div class="sl">Ratio amplitudes A₂/A₁</div><div class="sv" id="v2ra">—</div></div>
+        <div class="sc"><div class="sl">Ratio surfaces S₂/S₁</div><div class="sv" id="v2rs">—</div></div>
+        <div class="sc"><div class="sl">Degré sténose estimé</div><div class="sv" id="v2deg">—</div></div>
+        <div class="sc"><div class="sl">Vsys / seuil NASCET 50%</div><div class="sv" id="v2vc">—</div></div>
+        <div class="sc"><div class="sl">Conclusion</div><div class="sv" id="v2conc">—</div></div>
+      </div>
+      <div class="seuils">
+        <span class="stag">IP &gt; 0.85 → Normal</span>
+        <span class="stag">IP 0.60–0.85 → Limite</span>
+        <span class="stag">IP &lt; 0.60 → Suspicion sténose</span>
+        <span class="stag">Vsys &gt; 1.25 m/s → ≥ 50 %</span>
+        <span class="stag">Vsys &gt; 2.30 m/s → ≥ 70 %</span>
+      </div>
+    </div>
+
+    <div class="phase-bar"><div class="ph-r"></div><div class="ph-e"></div></div>
+    <div class="phase-lbl"><span>Repos (0–3 min)</span><span>Montée 4 étages (3–12 min)</span></div>
+
+    <div class="leg">
+      <div class="li"><div class="ld" style="background:var(--blue)"></div>C1 proximal</div>
+      <div class="li"><div class="ld" style="background:var(--orange)"></div>C2 distal</div>
+      <div class="li"><div class="ld" style="background:#66bb6a"></div>PAS</div>
+      <div class="li"><div class="ld" style="background:#4da6ff"></div>PAD</div>
+      <div class="li"><div class="ld" style="background:var(--purple)"></div>IP composite</div>
+      <div class="li"><div class="ld" style="background:var(--red)"></div>Vsys</div>
+    </div>
+
+    <div class="charts-col">
+      <div class="chart-card">
+        <div class="ct">Capteur 1 proximal (bleu) vs Capteur 2 distal (orange) — µV avec décalage PTT visible</div>
+        <div style="position:relative;">
+          <canvas id="c2d" height="90" role="img" aria-label="Piézo proximal et distal temps réel"></canvas>
+          <div class="chart-phase-cursor"></div>
+          <div class="chart-cursor" id="cur2d"></div>
+        </div>
+      </div>
+      <div class="chart-card">
+        <div class="ct">PTT inter-capteurs (ms) — D = 50 mm · VOP = D/PTT</div>
+        <div style="position:relative;">
+          <canvas id="c2ptt" height="75" role="img" aria-label="PTT temps réel"></canvas>
+          <div class="chart-phase-cursor"></div>
+          <div class="chart-cursor" id="cur2ptt"></div>
+        </div>
+      </div>
+      <div class="chart-card">
+        <div class="ct">Tension artérielle continue — PAS / PAD (mmHg)</div>
+        <div style="position:relative;">
+          <canvas id="c2ta" height="90" role="img" aria-label="PAS PAD modèle 2 temps réel"></canvas>
+          <div class="chart-phase-cursor"></div>
+          <div class="chart-cursor" id="cur2ta"></div>
+        </div>
+      </div>
+      <div class="chart-card">
+        <div class="ct">Vélocité systolique de pointe Vsys (m/s) — seuils NASCET</div>
+        <div style="position:relative;">
+          <canvas id="c2vs" height="75" role="img" aria-label="Vsys sténose temps réel"></canvas>
+          <div class="chart-phase-cursor"></div>
+          <div class="chart-cursor" id="cur2vs"></div>
+        </div>
+      </div>
+      <div class="chart-card">
+        <div class="ct">Index de perméabilité IP composite (u.a.) — pondération α/β courante</div>
+        <div style="position:relative;">
+          <canvas id="c2ip" height="75" role="img" aria-label="IP composite temps réel"></canvas>
+          <div class="chart-phase-cursor"></div>
+          <div class="chart-cursor" id="cur2ip"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="notes">
+      2 capteurs AlN/Kapton espacés de 50 mm sur la carotide primitive gauche.<br>
+      VOP = 0.050 m / PTT(s) · IP = α·(A₂/A₁) + (1−α)·(S₂/S₁).<br>
+      Pondérations à optimiser a posteriori sur données Doppler de référence (régression logistique / AUC-ROC).<br>
+      Vsys estimée : Bernoulli simplifié ΔP = ½ρv² (ρ = 1060 kg/m³).<br>
+      Bilan Doppler de confirmation si IP &lt; 0.60 ou Vsys &gt; 1.25 m/s sur ≥ 3 min consécutives.
+    </div>
+  </div>
+</main>
+
+<script>
+// ===== STATE =====
+const TOTAL = 720; // points (= 12 min à 1 pt/s)
+const D = 0.050;   // 50 mm en mètres
+let sbp0=118, dbp0=72, hr0=64, ht0=165, diam0=7.5, alpha=0.50;
+let playing=false, tick=0, speed=12, animId=null, lastTs=null;
+let activePanel='m1';
+
+// Pre-generated full dataset
+let SBP,DBP,HR,PIEZO,BPW,PTT,VSYS,RA,RS,SIarr,RIarr;
+const WINDOW = 120; // points visibles = 2 min glissantes
+
+function ph(t){ return t<3?0:Math.min((t-3)/1,1); }
+function rnd(v,d=1){ return parseFloat(v.toFixed(d)); }
+function seed(i){ return (Math.sin(i*127.1)*43758.5453)%1; }
+
+function generateAll(){
+  SBP=[];DBP=[];HR=[];PIEZO=[];BPW=[];PTT=[];VSYS=[];RA=[];RS=[];SIarr=[];RIarr=[];
+  for(let i=0;i<TOTAL;i++){
+    const t=i/60, p=ph(t);
+    const bpm=hr0+46*p + (seed(i+1)-.5)*2;
+    const cyc=60/bpm, pos=(t%cyc)/cyc;
+    const sbp=sbp0+42*p + 4*Math.sin(t*.4+1.2) + (seed(i+2)-.5)*2.5;
+    const dbp=dbp0+14*p + (seed(i+3)-.5)*1.5;
+    const amp=0.28+0.44*p;
+    let pz=0;
+    if(pos<0.10) pz=amp*Math.sin(Math.PI*pos/0.10);
+    else if(pos<0.14) pz=amp*0.32*Math.sin(Math.PI*(pos-0.10)/0.04);
+    else pz=-amp*0.08*Math.exp(-(pos-0.20)*8);
+    let bpv=dbp;
+    if(pos<0.10) bpv=dbp+(sbp-dbp)*Math.sin(Math.PI*pos/0.10);
+    else if(pos<0.14) bpv=sbp*0.85+dbp*0.15;
+    else bpv=dbp+(sbp*0.15)*Math.exp(-(pos-0.14)*6);
+    const ptt0=D/1.7*1000;
+    const pttv=ptt0*(1-0.28*p)+(seed(i+4)-.5)*0.8;
+    const dP=(sbp-dbp)*133.3;
+    const vsysv=Math.sqrt(Math.max(0,2*dP/1060))*(1+0.15*p);
+    const a1=amp, a2=amp*(0.84-0.06*p+(seed(i+5)-.5)*0.018);
+    const s1=amp*cyc*0.35, s2=s1*(0.80-0.05*p+(seed(i+6)-.5)*0.018);
+    const dtFrac=0.13+0.08*p;
+    const si=rnd((ht0/100)/(dtFrac*cyc),2);
+    const ri=rnd(Math.min(98,(a2/a1)*100+3*(seed(i+7)-.5)),1);
+    SBP.push(rnd(sbp));DBP.push(rnd(dbp));HR.push(rnd(bpm));
+    PIEZO.push(rnd(pz+(seed(i+8)-.5)*0.03,3));BPW.push(rnd(bpv,1));
+    PTT.push(rnd(pttv,1));VSYS.push(rnd(vsysv,3));
+    RA.push(rnd(a2/a1,3));RS.push(rnd(s2/s1,3));
+    SIarr.push(si);RIarr.push(ri);
+  }
+}
+
+// ===== CHARTS =====
+const charts={};
+const th={borderWidth:1.5,pointRadius:0,tension:0.3,fill:false};
+
+function makeLabels(count){
+  return Array.from({length:count},(_,i)=>rnd(i/60));
+}
+
+function mkChart(id,datasets,ymin,ymax,unit,refs){
+  const el=document.getElementById(id); if(!el) return;
+  if(charts[id]) charts[id].destroy();
+  const annots={};
+  if(refs) refs.forEach(r=>{
+    annots[r.id]={type:'line',yMin:r.v,yMax:r.v,
+      borderColor:r.c,borderWidth:1.2,borderDash:[5,4],
+      label:{content:r.l,display:true,position:'end',color:r.c,font:{size:9}}};
+  });
+  charts[id]=new Chart(el.getContext('2d'),{
+    type:'line',
+    data:{
+      labels:makeLabels(WINDOW),
+      datasets:datasets.map(d=>({...d,data:new Array(WINDOW).fill(null)}))
+    },
+    options:{
+      responsive:true,maintainAspectRatio:false,animation:false,
+      plugins:{
+        legend:{display:false},
+        tooltip:{mode:'index',intersect:false,callbacks:{
+          title:it=>`${parseFloat(it[0].label).toFixed(1)} min`,
+          label:it=>`${it.dataset.label}: ${it.raw!=null?it.raw:'—'}${unit||''}`
+        }}
+      },
+      scales:{
+        x:{type:'linear',min:0,max:WINDOW/60,
+          ticks:{stepSize:.5,callback:v=>`${v}m`,font:{size:9}},
+          grid:{color:'rgba(255,255,255,.04)'}},
+        y:{min:ymin,max:ymax,
+          ticks:{font:{size:9},callback:v=>v+(unit||'')},
+          grid:{color:'rgba(255,255,255,.04)'}}
+      }
+    }
+  });
+}
+
+function initCharts(){
+  mkChart('c1p',[
+    {label:'Piézo µV',borderColor:'#4da6ff',...th}
+  ],-0.95,0.95,' µV');
+  mkChart('c1b',[
+    {label:'ODP mmHg',borderColor:'#ff7043',...th}
+  ],50,180,' mmHg');
+  mkChart('c1ta',[
+    {label:'PAS',borderColor:'#66bb6a',...th},
+    {label:'PAD',borderColor:'#4da6ff',...th}
+  ],45,185,' mmHg');
+  mkChart('c1hr',[
+    {label:'FC',borderColor:'#ab47bc',...th}
+  ],45,135,' bpm');
+  mkChart('c1si',[
+    {label:'SI',borderColor:'#ff8a65',...th}
+  ],4,14,' m/s',[
+    {id:'r1',v:7,c:'#4da6ff',l:'~7 normal'},
+    {id:'r2',v:10,c:'#ef5350',l:'>10 pathologique'}
+  ]);
+  mkChart('c2d',[
+    {label:'C1 proximal',borderColor:'#4da6ff',...th},
+    {label:'C2 distal',borderColor:'#ff7043',borderDash:[4,3],...th}
+  ],-0.95,0.95,' µV');
+  mkChart('c2ptt',[
+    {label:'PTT ms',borderColor:'#26c6da',...th}
+  ],18,36,' ms');
+  mkChart('c2ta',[
+    {label:'PAS',borderColor:'#66bb6a',...th},
+    {label:'PAD',borderColor:'#4da6ff',...th}
+  ],45,185,' mmHg');
+  mkChart('c2vs',[
+    {label:'Vsys m/s',borderColor:'#ef5350',...th}
+  ],0.3,2.9,' m/s',[
+    {id:'v1',v:1.25,c:'#ff7043',l:'≥50% sténose'},
+    {id:'v2',v:2.30,c:'#ef5350',l:'≥70% sténose'}
+  ]);
+  mkChart('c2ip',[
+    {label:'IP',borderColor:'#ab47bc',...th,fill:true,backgroundColor:'rgba(171,71,188,.07)'}
+  ],0.30,1.10,'',[
+    {id:'i1',v:0.85,c:'#66bb6a',l:'Normal >0.85'},
+    {id:'i2',v:0.60,c:'#ef5350',l:'Suspicion <0.60'}
+  ]);
+}
+
+function pushPoint(chartId, dsIdx, value){
+  const ch=charts[chartId]; if(!ch) return;
+  const ds=ch.data.datasets[dsIdx];
+  const lbls=ch.data.labels;
+  ds.data.push(value);
+  if(ds.data.length>WINDOW) ds.data.shift();
+  // update x labels
+  const t0=Math.max(0,(tick-WINDOW)/60);
+  for(let i=0;i<lbls.length;i++) lbls[i]=rnd(t0+i/60);
+  ch.options.scales.x.min=rnd(t0);
+  ch.options.scales.x.max=rnd(t0+WINDOW/60);
+}
+
+function updateChartColors(chartId, dsIdx, color){
+  const ch=charts[chartId]; if(!ch) return;
+  ch.data.datasets[dsIdx].borderColor=color;
+}
+
+function redrawAll(){
+  const toUpdate=activePanel==='m1'
+    ?['c1p','c1b','c1ta','c1hr','c1si']
+    :['c2d','c2ptt','c2ta','c2vs','c2ip'];
+  toUpdate.forEach(id=>{ if(charts[id]) charts[id].update('none'); });
+}
+
+// ===== SIMULATION TICK =====
+function simTick(){
+  if(tick>=TOTAL){ stopSim(); return; }
+  const t=tick/60;
+  const p=ph(t);
+  const isEffort=t>=3;
+
+  // push data
+  if(activePanel==='m1'){
+    pushPoint('c1p',0,PIEZO[tick]);
+    pushPoint('c1b',0,BPW[tick]);
+    pushPoint('c1ta',0,SBP[tick]);
+    pushPoint('c1ta',1,DBP[tick]);
+    pushPoint('c1hr',0,HR[tick]);
+    pushPoint('c1si',0,SIarr[tick]);
+  } else {
+    const p2=rnd(PIEZO[tick]*RA[tick]*0.97+(seed(tick+99)-.5)*0.012,3);
+    pushPoint('c2d',0,PIEZO[tick]);
+    pushPoint('c2d',1,p2);
+    pushPoint('c2ptt',0,PTT[tick]);
+    pushPoint('c2ta',0,SBP[tick]);
+    pushPoint('c2ta',1,DBP[tick]);
+    pushPoint('c2vs',0,VSYS[tick]);
+    const ip=rnd(alpha*RA[tick]+(1-alpha)*RS[tick],3);
+    pushPoint('c2ip',0,ip);
+  }
+
+  redrawAll();
+  updateCursors();
+  updateMetrics(tick);
+  updateHeader(t);
+  tick++;
+}
+
+// ===== RAF LOOP =====
+let accumMs=0;
+function loop(ts){
+  if(!playing){ lastTs=null; return; }
+  if(lastTs!==null){
+    const dt=(ts-lastTs)*speed; // ms * speed factor
+    accumMs+=dt;
+    while(accumMs>=1000){ // 1 real second = 1 data point
+      simTick();
+      accumMs-=1000;
+      if(tick>=TOTAL||!playing) return;
+    }
+  }
+  lastTs=ts;
+  animId=requestAnimationFrame(loop);
+}
+
+function togglePlay(){
+  if(tick>=TOTAL){ resetSim(); return; }
+  playing=!playing;
+  const btn=document.getElementById('btn-play');
+  const dot=document.getElementById('rec-dot');
+  if(playing){
+    btn.textContent='⏸ Pause'; btn.className='btn-ctrl btn-pause';
+    dot.classList.remove('rec-hidden');
+    accumMs=0; lastTs=null;
+    animId=requestAnimationFrame(loop);
+  } else {
+    btn.textContent='▶ Reprendre'; btn.className='btn-ctrl btn-start';
+    dot.classList.add('rec-hidden');
+    cancelAnimationFrame(animId);
+  }
+}
+
+function stopSim(){
+  playing=false;
+  cancelAnimationFrame(animId);
+  document.getElementById('btn-play').textContent='✓ Terminé';
+  document.getElementById('btn-play').className='btn-ctrl';
+  document.getElementById('rec-dot').classList.add('rec-hidden');
+  document.getElementById('phase-badge').textContent='✓ Acquisition terminée';
+}
+
+function resetSim(){
+  playing=false; cancelAnimationFrame(animId); tick=0; accumMs=0; lastTs=null;
+  document.getElementById('btn-play').textContent='▶ Démarrer';
+  document.getElementById('btn-play').className='btn-ctrl btn-start';
+  document.getElementById('rec-dot').classList.add('rec-hidden');
+  document.getElementById('phase-badge').textContent='⏸ En attente';
+  document.getElementById('phase-badge').className='phase-badge';
+  document.getElementById('elapsed').textContent='0:00 / 12:00';
+  document.getElementById('progress-fill').style.width='0%';
+  resetMetrics();
+  initCharts();
+}
+
+function setSpeed(v){ speed=parseInt(v); }
+
+// ===== HEADER / METRICS =====
+function fmt(s){ const m=Math.floor(s/60); return `${m}:${String(Math.floor(s%60)).padStart(2,'0')}` }
+
+function updateHeader(t){
+  const isEffort=t>=3;
+  const badge=document.getElementById('phase-badge');
+  badge.textContent=isEffort?'🏃 Montée 4 étages':'😌 Repos';
+  badge.className='phase-badge'+(isEffort?' effort':'');
+  document.getElementById('elapsed').textContent=`${fmt(t*60)} / 12:00`;
+  document.getElementById('progress-fill').style.width=`${(t/12)*100}%`;
+}
+
+function updateCursors(){
+  const pct=`${Math.min(100,(tick/WINDOW)*100)}%`;
+  ['cur1p','cur1b','cur1ta','cur1hr','cur1si','cur2d','cur2ptt','cur2ta','cur2vs','cur2ip'].forEach(id=>{
+    const el=document.getElementById(id); if(el) el.style.left=pct;
+  });
+}
+
+function resetMetrics(){
+  ['v1s','v1d','v1m','v1h','v1si','v1ri','v1pp',
+   'v2s','v2d','v2m','v2h','v2ptt','v2vop','v2vs','v2ip','v2ra','v2rs','v2deg','v2vc'].forEach(id=>{
+    const el=document.getElementById(id); if(el) el.textContent='—';
+  });
+  const conc=document.getElementById('v2conc'); if(conc) conc.textContent='—';
+}
+
+function updateMetrics(i){
+  const sbp=Math.round(SBP[i]), dbp=Math.round(DBP[i]), hr=Math.round(HR[i]);
+  const map=Math.round(dbp+(sbp-dbp)/3);
+  const si=rnd(SIarr[i]), ri=Math.round(RIarr[i]), pp=sbp-dbp;
+  // M1
+  el('v1s',sbp); el('v1d',dbp); el('v1m',map); el('v1h',hr);
+  el('v1si',si); el('v1ri',ri); el('v1pp',pp);
+  mc('mc1s',sbp>145,'alert'); mc('mc1d',dbp>95,'alert'); mc('mc1h',hr>140,'alert');
+  // M2
+  const ptt=rnd(PTT[i]), vop=rnd(D/(ptt/1000),2);
+  const vsys=rnd(VSYS[i],2), ra=rnd(RA[i],2), rs=rnd(RS[i],2);
+  const ip=rnd(alpha*RA[i]+(1-alpha)*RS[i],2);
+  el('v2s',sbp); el('v2d',dbp); el('v2m',map); el('v2h',hr);
+  el('v2ptt',ptt); el('v2vop',vop); el('v2vs',vsys);
+  el('v2ra',ra); el('v2rs',rs); el('v2ip',ip);
+  el('v2deg',vsys>2.30?'>70 %':vsys>1.25?'50–70 %':'< 50 %');
+  el('v2vc',`${vsys} / 1.25`);
+  mc('mc2s',sbp>145,'alert'); mc('mc2d',dbp>95,'alert'); mc('mc2h',hr>140,'alert');
+  mc('mc2vs',vsys>=2.30,'alert',vsys>=1.25,'warn');
+  const conc=document.getElementById('v2conc');
+  if(conc){
+    let badge,label;
+    if(ip>0.85&&vsys<1.25){badge='b-ok';label='Normal';}
+    else if(ip>0.60&&vsys<1.25){badge='b-lim';label='Limite';}
+    else if(ip<0.60||vsys>=2.30){badge='b-alert';label='Sténose probable';}
+    else{badge='b-lim';label='Suspicion sténose';}
+    conc.innerHTML=`<span class="badge ${badge}">${label}</span>`;
+  }
+}
+
+function el(id,val){ const e=document.getElementById(id); if(e) e.textContent=val; }
+function mc(id,cond1,cls1,cond2,cls2){
+  const e=document.getElementById(id); if(!e) return;
+  e.className='mc'+(cond1?' '+cls1:cond2?' '+cls2:'');
+}
+
+// ===== CALIBRATION =====
+function applyCalib(){
+  sbp0=+document.getElementById('s1').value||118;
+  dbp0=+document.getElementById('d1').value||72;
+  hr0=+document.getElementById('h1').value||64;
+  ht0=+document.getElementById('ht1').value||165;
+  generateAll(); resetSim();
+}
+function applyCalib2(){
+  sbp0=+document.getElementById('s2').value||118;
+  dbp0=+document.getElementById('d2').value||72;
+  hr0=+document.getElementById('h2').value||64;
+  diam0=+document.getElementById('diam').value||7.5;
+  generateAll(); resetSim();
+}
+function updateAlpha(v){
+  alpha=parseInt(v)/100; const b=rnd(1-alpha);
+  document.getElementById('lbl-a').textContent=alpha.toFixed(2);
+  document.getElementById('lbl-b').textContent=b.toFixed(2);
+  document.getElementById('formula-live').textContent=`IP = ${alpha.toFixed(2)} · RA + ${b.toFixed(2)} · RS`;
+}
+
+// ===== TABS =====
+function sw(id){
+  activePanel=id;
+  document.querySelectorAll('.tab').forEach((b,i)=>b.classList.toggle('active',['m1','m2'][i]===id));
+  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+  document.getElementById('panel-'+id).classList.add('active');
+}
+
+// ===== INIT =====
+generateAll();
+initCharts();
+</script>
+</body>
+</html>
